@@ -43,7 +43,7 @@ MONITOR_INTERVAL = 3
 
 # API-ключи и эндпоинты
 ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "your_etherscan_api_key")
-ETHERSCAN_API_URL = "https://api.etherscan.io/api"
+ETHERSCAN_API_URL = "https://api.etherscan.io/v2/api"
 
 TENDERLY_ACCOUNT_ID = os.getenv("TENDERLY_ACCOUNT_ID", "your_account_id")
 TENDERLY_PROJECT_SLUG = os.getenv("TENDERLY_PROJECT_SLUG", "your_project_slug")

@@ -22,8 +22,19 @@ registry.register(SIMULATED_TRADES_TOTAL)
 registry.register(SIMULATED_PROFIT_GAUGE)
 registry.register(SIMULATED_TRADE_DURATION)
 
+# Для Gauge (устанавливаем явно 0)
+GAS_PRICE_GAUGE.set({}, 0)
+SIMULATED_PROFIT_GAUGE.set({}, 0)
 
-# Обработчик запроса метрик
+# Для Counter (увеличиваем на 0, чтобы создать метрику)
+TX_COUNTER.inc({})
+EXCEPTIONS_COUNTER.inc({})
+SIMULATED_TRADES_TOTAL.inc({})
+
+# Для Summary (добавляем нулевое наблюдение)
+REQUEST_TIME.observe({}, 0)
+SIMULATED_TRADE_DURATION.observe({}, 0)
+
 async def metrics_handler(request):
     accepts_headers = request.headers.getall('Accept', ['*/*'])
     metrics_data, content_type = render(registry, accepts_headers=accepts_headers)
@@ -31,17 +42,11 @@ async def metrics_handler(request):
     # Ensure content_type is a string
     if isinstance(content_type, dict):
         content_type = content_type.get('Content-Type', 'text/plain')
-
-    # Remove charset if present
     content_type = content_type.split(';')[0]
-
-    # Decode metrics_data if necessary
     metrics_text = metrics_data.decode('utf-8') if isinstance(metrics_data, bytes) else metrics_data
 
     return web.Response(text=metrics_text, content_type=content_type)
 
-
-# Функция для запуска сервера метрик
 async def start_metrics_server(port: int = 8001):
     app = web.Application()
     app.router.add_get("/metrics", metrics_handler)

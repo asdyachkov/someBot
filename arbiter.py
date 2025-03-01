@@ -1,4 +1,3 @@
-# arbiter.py (фрагмент)
 import asyncio
 import aiohttp
 import random
@@ -13,7 +12,6 @@ from metrics import TX_COUNTER, GAS_PRICE_GAUGE, EXCEPTIONS_COUNTER, SIMULATED_T
 
 async def get_market_data() -> tuple:
     async with aiohttp.ClientSession() as session:
-        # Используйте реальные API-эндпоинты; если они не возвращают корректные данные, в тестовом режиме подставляем случайные значения
         uniswap_url = "https://api.uniswap.org/price/eth_usdt"
         pancakeswap_url = "https://api.pancakeswap.info/api/v2/tokens/eth"
         try:
@@ -26,7 +24,6 @@ async def get_market_data() -> tuple:
         except Exception as e:
             logger.error(f"Ошибка получения рыночных данных: {e}")
             EXCEPTIONS_COUNTER.inc({"module": "arbiter", "function": "get_market_data"})
-            # В случае ошибки подставляем случайные значения
             uniswap_data = {"price": 0}
             pancakeswap_data = {"price": 0}
     return uniswap_data, pancakeswap_data
@@ -35,15 +32,15 @@ async def get_market_data() -> tuple:
 async def calculate_spread(uniswap_price: float, pancakeswap_price: float) -> float:
     if uniswap_price == 0:
         if IS_TEST_MODE:
-            # Подставляем случайное значение для Uniswap
             uniswap_price = random.uniform(1700, 1900)
-            logger.warning(f"Цена Uniswap равна 0, подставляем тестовое значение: {uniswap_price}")
+            logger.warning(f"Цена Uniswap равна 0, подставляем тестовое значение: {uniswap_price:.2f}")
         else:
             raise ValueError("Цена Uniswap равна 0, деление на ноль")
     if pancakeswap_price == 0 and IS_TEST_MODE:
         pancakeswap_price = random.uniform(1700, 1900)
-        logger.warning(f"Цена PancakeSwap равна 0, подставляем тестовое значение: {pancakeswap_price}")
-    return (pancakeswap_price - uniswap_price) / uniswap_price
+        logger.warning(f"Цена PancakeSwap равна 0, подставляем тестовое значение: {pancakeswap_price:.2f}")
+    spread = (pancakeswap_price - uniswap_price) / uniswap_price
+    return spread
 
 
 async def arbitrage_cycle(private_key: str):
@@ -61,9 +58,12 @@ async def arbitrage_cycle(private_key: str):
                 continue
 
             logger.info(f"Текущий спред: {spread * 100:.2f}%")
-            dynamic_gas = await get_dynamic_gas_price("propose")
-            GAS_PRICE_GAUGE.set(dynamic_gas)
 
+            # Обновляем динамическую цену газа
+            dynamic_gas = await get_dynamic_gas_price("propose")
+            GAS_PRICE_GAUGE.set({"module": "arbiter"}, dynamic_gas)
+
+            # Определяем процент сделки
             if spread >= MIN_SPREAD_HIGH:
                 trade_percentage = 1.0
             elif spread >= MIN_SPREAD_LOW:
@@ -73,7 +73,7 @@ async def arbitrage_cycle(private_key: str):
                 await asyncio.sleep(MONITOR_INTERVAL)
                 continue
 
-            total_capital = 100_000  # Пример: 100,000 USDT
+            total_capital = 100_000  # Примерная сумма сделки
             trade_amount = total_capital * trade_percentage
             arbitrage_data = {
                 "buy_from": "uniswap",
@@ -94,10 +94,11 @@ async def arbitrage_cycle(private_key: str):
                 sim_duration = asyncio.get_event_loop().time() - sim_start
                 SIMULATED_TRADE_DURATION.observe({"module": "arbiter"}, sim_duration)
                 if result.get("status") == "success":
+                    profit = float(result.get("profit"))
                     logger.info(
-                        f"Симуляция успешна: прибыль {result.get('profit')}, время исполнения {result.get('execution_time'):.2f} сек.")
+                        f"Симуляция успешна: прибыль {profit:.2f}, время исполнения {result.get('execution_time'):.2f} сек.")
                     SIMULATED_TRADES_TOTAL.inc({"status": "success"})
-                    SIMULATED_PROFIT_GAUGE.set({"module": "arbiter"}, float(result.get("profit")))
+                    SIMULATED_PROFIT_GAUGE.set({"module": "arbiter"}, profit)
                 else:
                     logger.error(f"Симуляция неудачна: {result.get('error')}")
                     SIMULATED_TRADES_TOTAL.inc({"status": "failure"})
@@ -105,7 +106,7 @@ async def arbitrage_cycle(private_key: str):
                 logger.info("Инициирую реальный флэш‑займ для арбитража...")
                 tx_hash = await initiate_flashloan("0xUSDTTokenAddress", trade_amount, arbitrage_data, private_key)
                 logger.info(f"Флэш‑займ инициирован, tx hash: {tx_hash.hex() if hasattr(tx_hash, 'hex') else tx_hash}")
-                TX_COUNTER.inc()
+                TX_COUNTER.inc({})
         except Exception as e:
             logger.error(f"Ошибка в арбитражном цикле: {e}")
             EXCEPTIONS_COUNTER.inc({"module": "arbiter", "function": "arbitrage_cycle"})
